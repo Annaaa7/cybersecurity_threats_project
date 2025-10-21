@@ -1,0 +1,288 @@
+---
+title: "cybersécurité"
+output: html_document
+date: "2025-10-13"
+---
+
+
+```{r}
+library(readr)
+library(ggplot2)
+library(dplyr)
+library(MASS)
+
+```
+
+
+
+# LECTURE DU CSV
+
+```{r}
+
+cybersecurity_threat <- read_csv("/Users/annad/Documents/MASTER/M2/analyse de survie/data/Global_Cybersecurity_Threats_2015_2024.csv")
+
+```
+
+```{r}
+colnames(cybersecurity_threat)
+```
+
+
+
+# DÉFINITION DES ÉLÉMENTS DE L'ANALYSE DE SURVIE
+
+- Temporelle : Temps que la défense a pris pour se défendre (Incident Resolution time (hours)) - quelles sont les chances qu'une attaque puisse être résolue en un temps limité ? (en moins de 3 jours)
+- Évènement : cyber attaque
+- Censure : une entreprise ne peut pas se relever après une attaque / la défense ne résoud pas l'attaque
+
+
+
+
+
+# ANALYSE EXPLORATOIRE
+
+```{r}
+ggplot(cybersecurity_threat,
+       aes(x = `Incident Resolution Time (in Hours)`)) +
+  geom_histogram(fill = "steelblue", color = "white", bins = 30) +
+  facet_wrap(~ `Target Industry`, scales = "free_y") +
+  labs(title = "Distribution du temps de résolution par industrie",
+       x = "Temps de résolution (heures)",
+       y = "Nombre d'incidents") +
+  theme_minimal()
+     border = "white")
+
+
+
+
+
+hist(cybersecurity_threat$`Incident Resolution Time (in Hours)`,
+     main = "Distribution du temps de résolution (toutes industries)",
+     xlab = "Temps de résolution (heures)",
+     ylab = "Fréquence",
+     col = "skyblue",
+     border = "white")
+
+
+```
+
+
+
+
+
+
+
+```{r}
+for (col in names(cybersecurity_threat)) {
+  
+  cat("\n============================\n")
+  cat("Variable :", col, "\n")
+  cat("============================\n")
+  
+  tab <- table(cybersecurity_threat[[col]])
+  pourcentages <- round(100 * tab / sum(tab), 2)
+  print(pourcentages)
+  
+  print(
+    ggplot(cybersecurity_threat, aes(x = .data[[col]])) +
+      geom_bar(fill = "skyblue", color = "white") +
+      labs(title = paste("Histogramme de", col),
+           x = col,
+           y = "Fréquence") +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  )
+}
+```
+
+
+## Unique type
+
+```{r}
+for (col in names(cybersecurity_threat)) {
+  cat("\n---", col, "---\n")
+  valeurs_uniques <- unique(cybersecurity_threat[[col]])
+  cat("Nombre de valeurs uniques :", length(valeurs_uniques), "\n")
+  print(valeurs_uniques)
+}
+
+
+```
+
+## Some graphs
+
+```{r}
+ggplot(cybersecurity_threat, aes(x = Year, fill = `Target Industry`)) +
+  geom_bar(position = "stack") +
+  labs(title = "Nombre d'attaques par industrie et par année",
+       x = "Année",
+       y = "Nombre d'attaques",
+       fill = "Industrie ciblée") +
+  theme_minimal()
+
+ggplot(cybersecurity_threat, aes(x = Year, fill = `Target Industry`)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Répartition des attaques par industrie et par année",
+       x = "Année",
+       y = "Nombre d'attaques",
+       fill = "Industrie ciblée") +
+  theme_minimal()
+
+ggplot(cybersecurity_threat, aes(x = Year, fill = `Target Industry`)) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(title = "Part (%) des attaques par industrie chaque année",
+       x = "Année",
+       y = "Pourcentage",
+       fill = "Industrie ciblée") +
+  theme_minimal()
+
+
+ggplot(cybersecurity_threat, aes(x = `Target Industry`)) +
+  geom_bar(fill = "steelblue") +
+  labs(title = "Nombre total d'attaques par industrie",
+       x = "Industrie ciblée",
+       y = "Nombre d'attaques") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+```
+
+```{r}
+
+data_industry_year <- cybersecurity_threat %>%
+  group_by(Year, `Target Industry`) %>%
+  summarise(Nombre_attaques = n(), .groups = "drop")
+
+ggplot(data_industry_year, aes(x = Year, y = Nombre_attaques, color = `Target Industry`)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  labs(title = "Évolution des attaques par industrie et par année",
+       x = "Année",
+       y = "Nombre d'attaques",
+       color = "Industrie ciblée") +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+```
+
+
+### Countries that suffered the most attacks
+
+```{r}
+attacks_by_country <- cybersecurity_threat %>%
+  group_by(Country) %>%
+  summarise(Nombre_attaques = n(), .groups = "drop") %>%
+  arrange(desc(Nombre_attaques))
+
+ggplot(attacks_by_country, aes(x = reorder(Country, -Nombre_attaques), y = Nombre_attaques)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(title = "Nombre d'attaques par pays",
+       x = "Pays",
+       y = "Nombre d'attaques") +
+  theme_minimal(base_size = 13) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+### Countries that suffered big losses
+
+```{r}
+loss_by_country <- cybersecurity_threat %>%
+  group_by(Country) %>%
+  summarise(Perte_totale = sum(`Financial Loss (in Million $)`, na.rm = TRUE), .groups = "drop") %>%
+  arrange(desc(Perte_totale))
+
+ggplot(loss_by_country, aes(x = reorder(Country, -Perte_totale), y = Perte_totale)) +
+  geom_bar(stat = "identity", fill = "tomato") +
+  labs(title = "Pertes financières totales par pays (en millions de $)",
+       x = "Pays",
+       y = "Pertes (Millions $)") +
+  theme_minimal(base_size = 13) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+### Heatmap
+
+attention, on a des variables catégorielles, donc à réfléchir ce qu'on fait avec
+
+```{r}
+
+
+```
+
+
+
+
+# MODÈLE PARAMÉTRIQUE
+
+```{r}
+
+# Extraire la colonne de temps de résolution
+rt <- cybersecurity_threat$`Incident Resolution Time (in Hours)`
+
+# Seuil = 3 jours = 72 h
+thr <- 72
+
+# --- (A) Estimation empirique ---
+n <- length(rt)
+k <- sum(rt < thr)
+p_emp <- k / n
+ic_emp <- binom.test(k, n)$conf.int
+
+cat(sprintf("[Empirique]  P(T<72h) = %.3f (IC95%%: %.3f–%.3f), n=%d\n",
+            p_emp, ic_emp[1], ic_emp[2], n))
+
+
+
+```
+
+```{r}
+
+# --- (B) Modèles paramétriques ---
+fits <- list()
+
+# Exponentielle
+fit_exp <- fitdistr(rt, densfun = "exponential")
+p_exp <- pexp(thr, rate = fit_exp$estimate["rate"])
+AIC_exp <- 2*1 - 2*fit_exp$loglik
+fits$exponential <- list(p = p_exp, AIC = AIC_exp)
+
+# Log-normale
+fit_lnorm <- fitdistr(rt, densfun = "lognormal")
+p_lnorm <- plnorm(thr, meanlog = fit_lnorm$estimate["meanlog"],
+                        sdlog   = fit_lnorm$estimate["sdlog"])
+AIC_lnorm <- 2*2 - 2*fit_lnorm$loglik
+fits$lognormal <- list(p = p_lnorm, AIC = AIC_lnorm)
+
+# Weibull
+fit_weib <- fitdistr(rt, densfun = "weibull")
+p_weib <- pweibull(thr,
+                   shape = fit_weib$estimate["shape"],
+                   scale = fit_weib$estimate["scale"])
+AIC_weib <- 2*2 - 2*fit_weib$loglik
+fits$weibull <- list(p = p_weib, AIC = AIC_weib)
+
+# --- (C) Tableau récapitulatif ---
+tab <- data.frame(
+  Model = c("Empirique","Exponentielle","Log-normale","Weibull"),
+  `P(T<72h)` = c(p_emp, p_exp, p_lnorm, p_weib),
+  AIC = c(NA, AIC_exp, AIC_lnorm, AIC_weib)
+)
+
+tab <- tab %>% arrange(AIC)
+print(tab, row.names = FALSE)
+
+# --- (D) Modèle le plus adapté ---
+best_model <- tab$Model[which.min(tab$AIC)]
+best_p <- tab$`P(T<72h)`[which.min(tab$AIC)]
+
+cat(sprintf("\n=> Modèle AIC-min : %s ; estimation P(T<72h) ≈ %.3f\n",
+            best_model, best_p))
+
+```
+
