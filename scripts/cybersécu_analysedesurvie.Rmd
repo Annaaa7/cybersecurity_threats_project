@@ -18,7 +18,7 @@ library(dplyr)
 
 ```{r}
 
-cybersecurity_threat <- read_csv("/Users/annad/Documents/MASTER/M2/analyse de survie/Global_Cybersecurity_Threats_2015_2024.csv")
+cybersecurity_threat <- read_csv("/Users/annad/Documents/MASTER/M2/analyse de survie/data/Global_Cybersecurity_Threats_2015_2024.csv")
 
 ```
 
@@ -32,7 +32,7 @@ colnames(cybersecurity_threat)
 
 - Temporelle : Temps que la défense a pris pour se défendre (Incident Resolution time (hours)) - quelles sont les chances qu'une attaque puisse être résolue en un temps limité ? (en moins de 3 jours)
 - Évènement : cyber attaque
-- Censure : 
+- Censure : une entreprise ne peut pas se relever après une attaque / la défense ne résoud pas l'attaque
 
 
 
