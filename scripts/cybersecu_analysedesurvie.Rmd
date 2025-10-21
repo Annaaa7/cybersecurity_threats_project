@@ -31,7 +31,8 @@ colnames(cybersecurity_threat)
 
 # DÉFINITION DES ÉLÉMENTS DE L'ANALYSE DE SURVIE
 
-- Temporelle : Temps que la défense a pris pour se défendre (Incident Resolution time (hours)) - quelles sont les chances qu'une attaque puisse être résolue en un temps limité ? (en moins de 3 jours)
+- Temporelle : Temps que la défense a pris pour se défendre (Incident Resolution time (hours)) - quelles sont les chances qu'une attaque puisse être résolue en un temps limité ? (en moins de 14h)
+https://www.makeitsafe.fr/temps-moyen-de-reponse-mttr-en-cybersecurite-comment-reduire-les-delais-pour-proteger-votre-entreprise/ 
 - Évènement : cyber attaque
 - Censure : une entreprise ne peut pas se relever après une attaque / la défense ne résoud pas l'attaque
 
@@ -226,7 +227,7 @@ attention, on a des variables catégorielles, donc à réfléchir ce qu'on fait 
 rt <- cybersecurity_threat$`Incident Resolution Time (in Hours)`
 
 # Seuil = 3 jours = 72 h
-thr <- 72
+thr <- 14
 
 # --- (A) Estimation empirique ---
 n <- length(rt)
@@ -234,7 +235,7 @@ k <- sum(rt < thr)
 p_emp <- k / n
 ic_emp <- binom.test(k, n)$conf.int
 
-cat(sprintf("[Empirique]  P(T<72h) = %.3f (IC95%%: %.3f–%.3f), n=%d\n",
+cat(sprintf("[Empirique]  P(T<14h) = %.3f (IC95%%: %.3f–%.3f), n=%d\n",
             p_emp, ic_emp[1], ic_emp[2], n))
 
 
@@ -270,7 +271,7 @@ fits$weibull <- list(p = p_weib, AIC = AIC_weib)
 # --- (C) Tableau récapitulatif ---
 tab <- data.frame(
   Model = c("Empirique","Exponentielle","Log-normale","Weibull"),
-  `P(T<72h)` = c(p_emp, p_exp, p_lnorm, p_weib),
+  `P(T<14h)` = c(p_emp, p_exp, p_lnorm, p_weib),
   AIC = c(NA, AIC_exp, AIC_lnorm, AIC_weib)
 )
 
@@ -281,7 +282,7 @@ print(tab, row.names = FALSE)
 best_model <- tab$Model[which.min(tab$AIC)]
 best_p <- tab$`P(T<72h)`[which.min(tab$AIC)]
 
-cat(sprintf("\n=> Modèle AIC-min : %s ; estimation P(T<72h) ≈ %.3f\n",
+cat(sprintf("\n=> Modèle AIC-min : %s ; estimation P(T<14h) ≈ %.3f\n",
             best_model, best_p))
 
 ```
