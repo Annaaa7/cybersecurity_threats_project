@@ -37,6 +37,54 @@ https://www.makeitsafe.fr/temps-moyen-de-reponse-mttr-en-cybersecurite-comment-r
 - Censure : une entreprise ne peut pas se relever après une attaque / la défense ne résoud pas l'attaque
 
 
+En termes mathématiques :
+
+- Fonction de survie S(t) : probabilité que l'incident ne soit pas résolu en moins de 14h 
+- Densité de probabilité f(t) : probabilité que l'incident soit résolu exactement à l'instant t (14h)
+- Fonction de risque h(t) : probabilité instantané qu'un incident non résolu le soit maintenant
+- Risque cumulé H(t) : somme des risques de résolution au fil du temps
+
+
+Nous n'avons pas de censure, nous allons donc en créer une artificielle, à 14h. 
+En effet, cette censure est importante car en moyenne, il faut 14h à une entreprise pour résoudre une cyber attaque. 
+
+```{r}
+library(survival)
+
+time  <- pmin(cybersecurity_threat$`Incident Resolution Time (in Hours)`, 14)
+event <- as.integer(cybersecurity_threat$`Incident Resolution Time (in Hours)` <= 14)
+
+fit <- survfit(Surv(time, event) ~ 1)
+# Survfit renvoie S(t); on veut F(14)=1-S(14)
+S14 <- summary(fit, times = 14)$surv
+S14_lower <- summary(fit, times = 14)$lower
+S14_upper <- summary(fit, times = 14)$upper
+
+F14      <- 1 - S14
+F14_low  <- 1 - S14_upper  # attention: borne inf de F = 1 - borne sup de S
+F14_high <- 1 - S14_lower
+
+c(F14 = F14, `IC95% low` = F14_low, `IC95% high` = F14_high)
+
+```
+
+
+
+```{r}
+hist(cybersecurity_threat$`Incident Resolution Time (in Hours)`
+    )
+```
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -73,26 +121,26 @@ hist(cybersecurity_threat$`Incident Resolution Time (in Hours)`,
 
 
 
-```{r}
-for (col in names(cybersecurity_threat)) {
+```{r, eval=FALSE}
+#for (col in names(cybersecurity_threat)) {
   
-  cat("\n============================\n")
-  cat("Variable :", col, "\n")
-  cat("============================\n")
+ # cat("\n============================\n")
+ # cat("Variable :", col, "\n")
+ # cat("============================\n")
   
-  tab <- table(cybersecurity_threat[[col]])
-  pourcentages <- round(100 * tab / sum(tab), 2)
-  print(pourcentages)
+ # tab <- table(cybersecurity_threat[[col]])
+ # pourcentages <- round(100 * tab / sum(tab), 2)
+#  print(pourcentages)
   
-  print(
-    ggplot(cybersecurity_threat, aes(x = .data[[col]])) +
-      geom_bar(fill = "skyblue", color = "white") +
-      labs(title = paste("Histogramme de", col),
-           x = col,
-           y = "Fréquence") +
-      theme(axis.text.x = element_text(angle = 45, hjust = 1))
-  )
-}
+#  print(
+#    ggplot(cybersecurity_threat, aes(x = .data[[col]])) +
+#      geom_bar(fill = "skyblue", color = "white") +
+ #     labs(title = paste("Histogramme de", col),
+ #          x = col,
+ #          y = "Fréquence") +
+ #     theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ # )
+#}
 ```
 
 
@@ -215,6 +263,15 @@ attention, on a des variables catégorielles, donc à réfléchir ce qu'on fait 
 
 
 ```
+
+
+
+### MOYENNE DU TEMPS DE RÉSOLUTION 
+
+```{r}
+mean(cybersecurity_threat$`Incident Resolution Time (in Hours)`)
+```
+
 
 
 
