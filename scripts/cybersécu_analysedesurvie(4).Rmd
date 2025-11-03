@@ -66,6 +66,11 @@ library(countrycode)
 library(stringr)
 library(plotly)
 
+library(dplyr)
+library(survival)
+library(survminer)
+library(ggplot2)
+library(gridExtra)
 ```
 <div style="text-align: center;">
 # **II - CARACTÉRISTIQUE DES DONNÉES**
@@ -270,8 +275,99 @@ interactive_map
   
 Etant donné que nous n'avons pas de valeurs manquantes, nous n'avons pas de censure. (JAI PAS COMPRIS LA CORRÉLATION ENTRE LES DONNÉES MANQUANTES ET LA CENSURE)
 
-Mais nous pouvons en créer une artificielle, car la moyenne de temps d'une résolution d'attaque est de 14h. 
+Mais nous pouvons en créer une artificielle, car la moyenne de temps d'une résolution d'attaque est de 14h. Nous allons donc assumer que l'entreprise meurt après 14h sans avoir résolu la cyber-attaque.
 Nous allons donc créer une censure à droite. 
+
+
+
+Alors créons deux datasets, un avec la censure à 14h, l'autre sans censure (l'original pour nous).
+
+```{r}
+
+temps_censure <- 14  # seuil de censure à droite (en heures)
+col_time <- "Incident Resolution Time (in Hours)"
+
+# 1) Partir du tableau complet, créer une vraie colonne numérique "time", filtrer proprement
+cyber <- cybersecurity_threat %>%
+  mutate(time = as.numeric(.data[[col_time]])) %>%
+  filter(!is.na(time) & time > 0)
+
+# 2) SANS CENSURE : tous les événements sont observés
+df_sans_censure <- cyber %>%
+  mutate(event = 1)
+
+# 3) AVEC CENSURE : tronquer à 14 h et marquer les censures
+#    (tu peux mettre <= au lieu de < selon ta convention)
+df_avec_censure <- cyber %>%
+  mutate(
+    time  = pmin(time, temps_censure),
+    event = ifelse(.data[[col_time]] < temps_censure, 1, 0)
+  )
+
+
+```
+
+
+REFAIRE LES CALCULS TOIUT EN DESSOUS EN UTILISANT LES DEUC DATASETS
+
+
+
+Illustration pour mieux comprendre la censure à droite 
+
+
+je pense qu'il faudra modifier le nom du dataset quand il faut recharger le rmd
+```{r}
+library(ggplot2)
+library(dplyr)
+
+# --- Jeu de données d'exemple ---
+set.seed(123)
+n <- 10  # nombre d'incidents
+temps_censure <- 14
+
+# Durées aléatoires (entre 2h et 25h)
+df_demo <- data.frame(
+  id = factor(1:n),
+  time_true = runif(n, 2, 25)
+) %>%
+  mutate(
+    time_obs = pmin(time_true, temps_censure),
+    event = ifelse(time_true <= temps_censure, 1, 0)
+  )
+
+# --- Tracé ---
+ggplot(df_demo, aes(y = id)) +
+  geom_segment(aes(x = 0, xend = time_obs, yend = id,
+                   color = factor(event)), linewidth = 1.2) +
+  geom_point(aes(x = time_obs, shape = factor(event), color = factor(event)), size = 3) +
+  scale_color_manual(values = c("0" = "#D55E00", "1" = "#0072B2"),
+                     labels = c("0" = "Censuré (|)", "1" = "Événement (❌)")) +
+  scale_shape_manual(values = c("0" = 124, "1" = 4),  # | et X
+                     labels = c("0" = "Censuré", "1" = "Événement")) +
+  labs(
+    title = "Illustration de la censure à droite (seuil = 14 h)",
+    x = "Temps (heures)",
+    y = "Incident",
+    color = "Statut",
+    shape = "Statut"
+  ) +
+  geom_vline(xintercept = temps_censure, linetype = "dashed", color = "grey40") +
+  annotate("text", x = temps_censure + 0.5, y = n + 0.5,
+           label = "Seuil de censure (14 h)", hjust = 0, size = 3.5, color = "grey40") +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "bottom",
+        plot.title = element_text(face = "bold", hjust = 0.5))
+
+```
+
+
+
+
+
+
+
+
+
 
 
 
@@ -280,321 +376,385 @@ Nous allons donc créer une censure à droite.
 
 ### **KAPLAN MEIEIR pour la fonction de survie S(t)**
 
+On sélectionne uniquement la colonne de temps et on la renomme proprement
+
+
+```{r}
+df <- cybersecurity_threat %>%
+  select(`Incident Resolution Time (in Hours)`) %>%
+  rename(time_hours = `Incident Resolution Time (in Hours)`) %>%
+  filter(!is.na(time_hours))
+
+# df est donc juste une copie du dataset de base où on a juste renommé la colonne de temps avec un autre nom.
+
+```
+
+
 Forumule avec censure : 
 
 $$
 \widehat{S}(t) = \prod_{t_i \le t} \left(1 - \frac{d_i}{n_i}\right)
 $$
-
-
 ```{r}
-# =========================
-# --- PACKAGES ---
-# =========================
-library(dplyr)
-library(survival)
-library(survminer)
-library(ggplot2)
-library(gridExtra)
+fit_avec  <- survfit(Surv(time, event) ~ 1, data = df_avec_censure)
 
-# =========================
-# --- PRÉPARATION ---
-# =========================
-# On sélectionne uniquement la colonne de temps et on la renomme proprement
-df <- cybersecurity_threat %>%
-  select(`Incident Resolution Time (in Hours)`) %>%
-  rename(time_hours = `Incident Resolution Time (in Hours)`) %>%
-  filter(!is.na(time_hours))
+df_avec_plot <- data.frame(
+  time = fit_avec$time,
+  surv = fit_avec$surv,
+  type = "Avec censure (14h)"
+)
 
-# =========================
-# A) KAPLAN–MEIER SANS CENSURE
-# =========================
-df <- df %>%
-  mutate(event_all = 1L)  # tout est observé
-
-# modèle KM complet
-fit_all <- survfit(Surv(time_hours, event_all) ~ 1, data = df)
-
-# Médiane (temps où S(t) = 0.5)
-median_all <- as.numeric(summary(fit_all)$table["median"])
-
-# Graphique
-p_all <- ggsurvplot(
-  fit_all,
-  conf.int = TRUE,
-  xlab = "Temps (heures)",
-  ylab = "S(t) = P(T > t)",
-  title = "Kaplan–Meier sans censure",
-  surv.scale = "percent"
-)$plot + theme_minimal()
-
-# =========================
-# B) KAPLAN–MEIER AVEC CENSURE À 14h
-# =========================
-df <- df %>%
-  mutate(
-    time14  = pmin(time_hours, 14),         # tronque les temps à 14 h
-    event14 = as.integer(time_hours <= 14)  # 1 si résolu avant ou à 14 h
-  )
-
-fit_14 <- survfit(Surv(time14, event14) ~ 1, data = df)
-
-# Extraction de S(14) et IC95 %
-s14 <- summary(fit_14, times = 14)
-S14      <- as.numeric(s14$surv)
-S14_low  <- as.numeric(s14$lower)
-S14_high <- as.numeric(s14$upper)
-F14      <- 1 - S14
-F14_low  <- 1 - S14_high
-F14_high <- 1 - S14_low
-
-median_14 <- as.numeric(summary(fit_14)$table["median"])
-
-# Graphique censuré
-p_14 <- ggsurvplot(
-  fit_14,
-  conf.int = TRUE,
-  xlab = "Temps (heures)",
-  ylab = "S(t) = P(T > t)",
-  title = "Kaplan–Meier avec censure à 14 h",
-  surv.scale = "percent"
-)$plot + theme_minimal() +
-  geom_vline(xintercept = 14, linetype = "dashed")
-
-# =========================
-# C) AFFICHAGE CÔTE À CÔTE
-# =========================
-grid.arrange(p_all, p_14, ncol = 2)
-
-# =========================
-# D) RÉSUMÉS NUMÉRIQUES
-# =========================
-cat("\n--- SANS CENSURE ---\n")
-cat("Médiane de survie (heures):", median_all, "\n")
-
-cat("\n--- CENSURE ADMINISTRATIVE À 14h ---\n")
-cat("S(14) =", round(S14, 4), " | IC95% [", round(S14_low, 4), ", ", round(S14_high, 4), "]\n", sep = "")
-cat("F(14) = 1 - S(14) =", round(F14, 4), " | IC95% [", round(F14_low, 4), ", ", round(F14_high, 4), "]\n", sep = "")
-cat("Médiane (sous censure 14 h):", median_14, " (NA si < 50% d'événements avant 14 h)\n")
-
+ggplot(df_avec_plot, aes(x = time, y = surv)) +
+  geom_step(linewidth = 1.1) +
+  labs(title = "Courbe de survie Kaplan–Meier (avec censure)",
+       x = "Temps (heures)", y = "S(t)") +
+  coord_cartesian(ylim = c(0, 1)) +
+  theme_minimal(base_size = 13)
 
 ```
 
 
-On peut faire après les courbes selon l'industrie, les pays ou encore les types de défenses utilisés etc.
+
+
+
+Formule sans censure :
+
+$$
+S(t) = [S(t - 1)] \cdot \left( 1 - \frac{d}{n} \right)
+$$
+
+
+```{r}
+
+fit_sans  <- survfit(Surv(time, event) ~ 1, data = df_sans_censure)
+
+df_sans_plot <- data.frame(
+  time = fit_sans$time,
+  surv = fit_sans$surv,
+  type = "Sans censure"
+)
+
+ggplot(df_sans_plot, aes(x = time, y = surv)) +
+  geom_step(linewidth = 1.1) +
+  labs(title = "Courbe de survie Kaplan–Meier (sans censure)",
+       x = "Temps (heures)", y = "S(t)") +
+  coord_cartesian(ylim = c(0, 1)) +
+  theme_minimal(base_size = 13)
+```
+
+
+
+```{r}
+
+df_combined <- rbind(df_sans_plot, df_avec_plot)
+
+ggplot() +
+  geom_step(data = df_sans_plot, aes(time, surv, color = "Sans censure"), linewidth = 1.1) +
+  geom_step(data = df_avec_plot, aes(time, surv, color = "Avec censure (14h)"),
+            linewidth = 1.1, linetype = "dashed") +
+  scale_color_manual(values = c("Sans censure" = "#0072B2",
+                                "Avec censure (14h)" = "red")) +
+  labs(
+    title = "Courbes de survie Kaplan–Meier",
+    x = "Temps (heures)",
+    y = "Probabilité de survie S(t)"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    legend.title = element_blank(),
+    plot.title = element_text(face = "bold", hjust = 0.5)
+  )
+
+
+
+```
+
+On peut faire après les courbes selon l'industrie, les pays ou encore les types de défenses utilisés etc. -> à faire lol
 
 #### BIAIS
+
+L'estimateur de Kaplan-Meier est biaisé, mais asymptotiquement sans biais. 
+
+
+
+à modifier : Le biais est une mesure de l'écart entre l'estimation de Kaplan-Meier et la vraie fonction de survie. Il indique si l'estimateur surestime ou sous-estime la probabilité de survie à un moment donné. Ici, le biais est positif, cela signifie que l'estimateur de Kaplan-Meier est enclin à surestimer la probabilité de survie par rapport à la réalité.
+
+
+```{r}
+
+# Suppose qu'on utilise df_avec_censure
+t <- 14  # par exemple
+fit <- survfit(Surv(time, event) ~ 1, data = df_avec_censure)
+
+# --- 1) Survie estimée par Kaplan–Meier à t ---
+observed_survival <- summary(fit, times = t)$surv
+
+# --- 2) Survie empirique "naïve" ---
+# proportion d'incidents résolus avant t
+prop_resolus <- mean(df_avec_censure$event[df_avec_censure$time <= t])
+expected_survival <- 1 - prop_resolus
+
+# --- 3) Biais ---
+bias <- observed_survival - expected_survival
+
+bias
+```
+
+```{r}
+library(survival)
+
+# Jeu sans censure
+t <- 14  # par exemple 14 heures
+
+fit_no_cens <- survfit(Surv(time, event) ~ 1, data = df_sans_censure)
+
+# --- 1) Survie estimée par Kaplan–Meier à t ---
+observed_survival_no_cens <- summary(fit_no_cens, times = t)$surv
+
+# --- 2) Survie empirique (sans censure, donc simplement le % de cas > t) ---
+expected_survival_no_cens <- mean(df_sans_censure$time > t)
+
+# --- 3) Biais ---
+bias_no_cens <- observed_survival_no_cens - expected_survival_no_cens
+
+bias_no_cens
+
+```
+
+On a le même biais mais on devait s'y attendre par rapport à la courbe de Kaplan-Meier qu'on a obtenu avant.
+
+JE NE SAIS PAS COMMENT RÉGLER ÇANLOLOL
 
 #### VARIANCE 
 
 
 
+??? INCONNUE AU BATAILLON POUR L'INSTANT
+
+
+
+
+
+
 ## **NELSON AALEN pour la fonction de risque cumulative H(t)**
 
-avec et sans censure formules ?
+H(t) est définie comme la somme cumulative des risques au fil du temps. Elle est souvent utilisée lorsque les données de survie sont censurées.
 
+Formule avec censure :
+$$
+H(t) = \sum_{t_i \le t} \frac{d_i}{n_i}
+$$
 ```{r}
-# Packages
-library(dplyr)
-library(survival)
-library(ggplot2)
-library(tidyr)
-library(gridExtra)
+# --- Avec censure (14h) ---
+fit_na_avec <- survfit(Surv(time, event) ~ 1,
+                       data = df_avec_censure,
+                       type = "fleming-harrington")
 
-# ===== 0) Préparer les données =====
-df0 <- cybersecurity_threat %>%
-  select(`Incident Resolution Time (in Hours)`) %>%
-  rename(time_hours = `Incident Resolution Time (in Hours)`) %>%
-  filter(!is.na(time_hours))
+df_H_avec <- data.frame(
+  time = fit_na_avec$time,
+  H    = -log(pmax(fit_na_avec$surv, 1e-12)),
+  type = "Avec censure (14h)"
+)
 
-# ===== 1) Kaplan–Meier SANS censure =====
-df_all <- df0 %>% mutate(event = 1L)
-fit_all <- survfit(Surv(time_hours, event) ~ 1, data = df_all)
-
-s_all <- summary(fit_all)
-km_all <- data.frame(
-  time   = s_all$time,
-  S      = s_all$surv,
-  nevent = s_all$n.event,
-  nrisk  = s_all$n.risk
-) %>%
-  mutate(
-    F = 1 - S,
-    H = cumsum(nevent / nrisk),        # Nelson–Aalen
-    hazard_increment = nevent / nrisk  # incrément discret h(t_i)
-  )
-
-# ===== 2) Kaplan–Meier AVEC censure admin à 14 h =====
-df_14 <- df0 %>%
-  mutate(
-    time   = pmin(time_hours, 14),
-    event  = as.integer(time_hours <= 14)
-  )
-fit_14 <- survfit(Surv(time, event) ~ 1, data = df_14)
-
-s_14 <- summary(fit_14)
-km_14 <- data.frame(
-  time   = s_14$time,
-  S      = s_14$surv,
-  nevent = s_14$n.event,
-  nrisk  = s_14$n.risk
-) %>%
-  mutate(
-    F = 1 - S,
-    H = cumsum(nevent / nrisk),
-    hazard_increment = nevent / nrisk
-  )
-
-# ===== 3) Tracés comparatifs =====
-
-# (A) Risque cumulé H(t) : Nelson–Aalen
-p_H <- ggplot() +
-  geom_step(data = km_all, aes(x = time, y = H), size = 1, alpha = 0.9) +
-  geom_step(data = km_14, aes(x = time, y = H), linetype = "dashed") +
-  labs(title = "Risque cumulé H(t) — Nelson–Aalen",
-       x = "Temps (heures)", y = "H(t)") +
-  theme_minimal()
-
-# (B) Fonction de répartition F(t) = 1 - S(t)
-p_F <- ggplot() +
-  geom_step(data = km_all, aes(x = time, y = F), size = 1, alpha = 0.9) +
-  geom_step(data = km_14, aes(x = time, y = F), linetype = "dashed") +
-  labs(title = "Fonction de répartition F(t) = 1 - S(t)",
-       x = "Temps (heures)", y = "F(t)") +
-  theme_minimal()
-
-# (C) Incréments de hazard (discret) d_i / n_i
-p_h <- ggplot() +
-  geom_step(data = km_all, aes(x = time, y = hazard_increment), size = 1, alpha = 0.9) +
-  geom_step(data = km_14, aes(x = time, y = hazard_increment), linetype = "dashed") +
-  labs(title = "Incréments de hazard (discrets) d_i / n_i",
-       x = "Temps (heures)", y = "ΔH(t_i) = d_i / n_i") +
-  theme_minimal()
-
-grid.arrange(p_H, p_F, p_h, ncol = 1)
-
-# ===== 4) Quelques valeurs à 14 h =====
-# S(14) et F(14) sans censure (lecture par approximation au dernier temps <= 14)
-S14_all <- km_all %>% filter(time <= 14) %>% tail(1) %>% pull(S)
-F14_all <- 1 - S14_all
-
-# S(14) et F(14) avec censure
-S14_cens <- km_14 %>% filter(time == max(time)) %>% tail(1) %>% pull(S)
-F14_cens <- 1 - S14_cens
-
-cat("Sans censure : S(14) ≈", round(S14_all, 4), " | F(14) ≈", round(F14_all, 4), "\n")
-cat("Avec censure  : S(14) =", round(S14_cens, 4), " | F(14) =", round(F14_cens, 4), "\n")
 
 ```
+
+
+
+Formule sans censure : 
+$$
+H(t) = \sum_{i} \frac{d_i}{n_i}
+$$
+
+```{r}
+# --- Sans censure ---
+fit_na_sans <- survfit(Surv(time, event) ~ 1,
+                       data = df_sans_censure,
+                       type = "fleming-harrington")
+
+df_H_sans <- data.frame(
+  time = fit_na_sans$time,
+  H    = -log(pmax(fit_na_sans$surv, 1e-12)),
+  type = "Sans censure"
+)
+
+
+
+```
+
+
+tracé des deux courbes
+
+```{r}
+df_H <- bind_rows(df_H_sans, df_H_avec)
+
+# --- Tracé ---
+ggplot(df_H, aes(x = time, y = H, color = type, linetype = type)) +
+  geom_step(linewidth = 1.1) +
+  labs(title = "Risque cumulée H(t) — estimateur de Nelson–Aalen",
+       x = "Temps (heures)", y = "H(t)") +
+  scale_color_manual(values = c("Sans censure" = "#0072B2",
+                                "Avec censure (14h)" = "#D55E00")) +
+  scale_linetype_manual(values = c("Sans censure" = "solid",
+                                   "Avec censure (14h)" = "dashed")) +
+  theme_minimal(base_size = 13) +
+  theme(legend.title = element_blank(),
+        plot.title = element_text(face = "bold", hjust = 0.5))
+
+```
+
+
+même problème, les deux courbes se confondent mais va s'y j'ai la flemme 
+
+
 
 
 ## **DENSITÉ& DE RISQUE INSTANT&E h(t)**
 
-avec et sans censure formules ?
+La densité du risque instantané h(t) est définie comme le rapport du nombre d'événements observés à un instant donné au nombre de sujets encore à risque à cet instant
 
-à partir de kaplan-meier
+Formule sans censure :
+$$
+h(t) = \frac{d}{n}
+$$
+
+
+Formule avec cendure :
+
+$$
+h(t) = \sum_i \frac{d_i}{n_i}
+$$
+
+
+
 
 ```{r}
-# --- Packages ---
 library(dplyr)
-library(survival)
 library(ggplot2)
 
-# --- 0) Prepare data: create a clean 'time_hours' column ---
-df <- cybersecurity_threat %>%
-  select(`Incident Resolution Time (in Hours)`) %>%
-  rename(time_hours = `Incident Resolution Time (in Hours)`) %>%
-  filter(!is.na(time_hours))
+# Combine les deux courbes de survie
+df_combined <- bind_rows(df_sans_plot, df_avec_plot)
 
-# ================================
-# 1) KM WITHOUT CENSORING
-# ================================
-df_all <- df %>% mutate(event = 1L)  # all events observed
-fit_all <- survfit(Surv(time_hours, event) ~ 1, data = df_all)
-
-s_all <- summary(fit_all)
-km_all <- data.frame(
-  time   = s_all$time,
-  S      = s_all$surv,
-  nevent = s_all$n.event,
-  nrisk  = s_all$n.risk
-) %>%
+# Calcule H(t) et h(t) ≈ ΔH / Δt
+df_hazard <- df_combined %>%
+  group_by(type) %>%
+  arrange(time, .by_group = TRUE) %>%
   mutate(
-    S_prev = dplyr::lag(S, default = 1),        # S(t-) (pre-jump survival)
-    # Discrete hazard increment h(t_i) = ΔH_i = d_i / n_i = 1 - S_i / S_{i-1}
-    h_inc  = 1 - (S / S_prev)
+    H = -log(pmax(surv, 1e-12)),              # H(t) = -log(S(t))
+    h = (H - lag(H)) / (time - lag(time))     # h(t) par différences finies
   )
 
-# ================================
-# 2) KM WITH ADMIN CENSORING AT 14h
-# ================================
-df_14 <- df %>%
-  mutate(
-    time  = pmin(time_hours, 14),           # truncate at 14h
-    event = as.integer(time_hours <= 14)    # 1 if resolved by 14h, else censored
+# Supprime les premières lignes NA
+df_hazard <- df_hazard %>% filter(!is.na(h))
+
+# --- Tracé de h(t) ---
+ggplot(df_hazard, aes(x = time, y = h, color = type, linetype = type)) +
+  geom_step(linewidth = 1.1) +
+  labs(title = "Densité de risque instantané h(t)",
+       subtitle = "Comparaison entre jeu avec et sans censure",
+       x = "Temps (heures)",
+       y = "h(t) — Densité de risque instantané") +
+  scale_color_manual(values = c("Sans censure" = "#0072B2",
+                                "Avec censure (14h)" = "#D55E00")) +
+  scale_linetype_manual(values = c("Sans censure" = "solid",
+                                   "Avec censure (14h)" = "dashed")) +
+  theme_minimal(base_size = 13) +
+  theme(
+    legend.title = element_blank(),
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(hjust = 0.5)
   )
-
-fit_14 <- survfit(Surv(time, event) ~ 1, data = df_14)
-
-s_14 <- summary(fit_14)
-km_14 <- data.frame(
-  time   = s_14$time,
-  S      = s_14$surv,
-  nevent = s_14$n.event,
-  nrisk  = s_14$n.risk
-) %>%
-  mutate(
-    S_prev = dplyr::lag(S, default = 1),
-    h_inc  = 1 - (S / S_prev)
-  )
-
-# ================================
-# 3) Plot h(t) with and without censoring (two lines)
-# ================================
-ggplot() +
-  # courbe sans censure
-  geom_step(data = km_all, aes(x = time, y = h_inc, color = "Sans censure"), size = 1.1, alpha = 0.9) +
-  # courbe avec censure à 14 h
-  geom_step(data = km_14, aes(x = time, y = h_inc, color = "Censurée à 14 h"), size = 1.1, alpha = 0.9, linetype = "dashed") +
-  # repère vertical à 14 h
-  geom_vline(xintercept = 14, linetype = "dotted") +
-  labs(
-    title = "Estimation du taux de risque instantané discret h(t)",
-    subtitle = "Pleine : sans censure | Pointillée : censure administrative à 14 h",
-    x = "Temps (heures)",
-    y = "h(t) ≈ ΔH(t_i) = d_i / n_i",
-    color = "Type d'analyse"
-  ) +
-  scale_color_manual(values = c("Sans censure" = "steelblue", "Censurée à 14 h" = "firebrick")) +
-  theme_minimal(base_size = 13)
-
-
-# (Optionnel) Vérifier S(14) / F(14) pour info
-S14_cens <- (summary(fit_14, times = 14)$surv)
-F14_cens <- 1 - S14_cens
-cat("Avec censure 14h: S(14) =", round(S14_cens, 4), " | F(14) =", round(F14_cens, 4), "\n")
-
-
-```
-
-
-
-
-2methode 
-
-```{r}
-library(muhaz)
-
-h_est <- muhaz(df$time_hours, rep(1, nrow(df)))  # event = 1 pour tous (sans censure)
-plot(h_est, main="Hazard instantané lissé h(t)", xlab="Temps (heures)", ylab="h(t)")
 
 ```
 
 
 ## **Estimateur de BRESLOW**
 
+modèle de Cox sans covariable → la baseline hazard est l’estimateur de Breslow
+
+L'estimateur de Breslow est obtenu à partir de l'estimateur de Kaplan-Meier. Sa formule est la suivante : -> à vérifier
+
+$$
+\hat{H}_{BR} = -\log(\hat{S}_{KM})
+$$
+où :
+$$
+\hat{S}_{KM}(t) = \prod_{i = 1,\, t_i < t} (1 - d_i Y_i)
+$$
+
+
+
+L'estimateur de Breslow est utilisé pour estimer la fonction de survie dans le modèle de régression de Cox. Il permet de tenir compte de la censure dans les données de survie et fournit une estimation adaptée pour les échantillons censurés.
+
+Formule sans censure :
+$$
+H(t) = \sum_{t_i \le t} \frac{d_i}{n_i}
+$$
+
+```{r}
+cox_sans_censure  <- coxph(Surv(time, event) ~ 1, data = df_sans_censure)
+
+H_sans <- basehaz(cox_sans_censure, centered = FALSE) %>%
+  transmute(time = time,
+            H = hazard / max(hazard, na.rm = TRUE),
+            type = "Sans censure")
+```
+
+
+Formule avec censure :
+
+$$
+H(t) = \sum_{t_i \le t} \sum_{j \le t_i} \frac{d_{ij}}{n_{ij}}
+$$
+
+```{r}
+cox_avec_censure  <- coxph(Surv(time, event) ~ 1, data = df_avec_censure)
+
+H_avec <- basehaz(cox_avec_censure, centered = FALSE) %>%
+  transmute(time = time,
+            H = hazard / max(hazard, na.rm = TRUE),   
+            type = "Avec censure (14h)")
+
+```
+
+
+
+tracé des deux courbes
+
+```{r}
+df_breslow <- bind_rows(H_avec, H_sans)
+
+# --- 🎨 Tracé final ---
+ggplot(df_breslow, aes(x = time, y = H, color = type, linetype = type)) +
+  geom_step(linewidth = 1.2) +
+  labs(
+    title = "Estimation de la fonction de risque cumulée H(t) — Méthode de Breslow",
+    subtitle = "Comparaison entre jeu avec et sans censure",
+    x = "Temps (heures)",
+    y = "Fonction de risque cumulé H(t) normalisée"
+  ) +
+  scale_color_manual(values = c("Sans censure" = "#0072B2",
+                                "Avec censure (14h)" = "#D55E00")) +
+  scale_linetype_manual(values = c("Sans censure" = "solid",
+                                   "Avec censure (14h)" = "dashed")) +
+  theme_minimal(base_size = 13) +
+  theme(
+    legend.title = element_blank(),
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(hjust = 0.5)
+  )
+
+```
+
 
 ## **LOG RANK**
+
+Le test du log-rank compare les courbes de survie de deux groupes distincts. L'hypothèse nulle du test est que les deux groupes proviennent de la même population, c'est-à-dire qu'il n'y a pas de différence significative entre les distributions de survie des deux groupes.
+
+
+Ici, nous allons comparer les distributions des courbes quand les données sont censurées vs non-censurées. Nous allons déterminer s'il y a une différence significative dans la distribution des temps de survie entre ces groupes.
+
+Si le test du log-rank donne un résultat significatif, cela suggère que les courbes de survie sont différentes, indiquant une variation significative dans les temps de survie entre les groupes comparés. En revanche, si le test n'est pas significatif, on n'a pas suffisamment de preuves pour rejeter l'hypothèse nulle, ce qui signifie que les courbes de survie peuvent être considérées comme provenant de la même population.
 
 
 ## **COX (semi-paramétrique) -> j'ai pas compris encore**
