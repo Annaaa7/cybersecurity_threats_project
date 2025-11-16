@@ -1,0 +1,946 @@
+---
+title: "CYBERSECURITE - DUFAY / DENOEL"
+output:
+  html_document:
+    toc: true          # ✅ active le sommaire
+    toc_float: true    # ✅ sommaire flottant/déroulant
+    number_sections: false  # pas de numéros
+    toc_depth: 3       # ✅ inclut titres, sous-titres et sous-sous-titres
+---
+
+<style>
+body {
+  background-color: #A1EDFF;
+}
+</style>
+
+<img src="https://cdn.prod.website-files.com/63a71c562e3ccbc6f6a40f0f/67b98625472de816d0951c58_65bcbb02d38aec8f6ce1f1ab_L%2526D_Cyber%2526ITSecurity_Hero.png"
+     width="700"
+     style="display:block; margin:auto;" 
+     alt="source : Cyber & IT Security Hero">
+
+
+<div style="text-align: center;">
+# **I - INTRODUCTION**
+</div>
+  
+La cybersécurité est aujourd’hui un enjeu majeur pour les organisations publiques et privées. Face à la multiplication des attaques informatiques — vols de données, ransomwares, intrusions — il devient essentiel de comprendre non seulement la fréquence des incidents, mais aussi leur durée avant résolution. Dans ce contexte, une analyse de survie permet d’étudier le temps écoulé entre la détection d’un incident et sa résolution, tout en tenant compte des facteurs pouvant influencer ce délai (type d’attaque, secteur d’activité, niveau de préparation, etc.). Ce type d’analyse statistique offre une approche rigoureuse pour identifier les éléments qui prolongent ou réduisent la durée de traitement des incidents de cybersécurité, et ainsi améliorer la résilience des systèmes d’information.
+
+**Problématique : Etude des durées de la résolution de cyber-attaques**
+
+Nous allons considérer T la fin d’une cyber-attaque. La fonction de survie S(t) correspond donc à la probabilité que la résolution de cette attaque soit terminée après le temps t.
+
+
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+#INSTALLATION DES PACKAGES NECESSAIRES
+
+#install.packages("readr")
+#install.packages("dplyr")
+
+#install.packages("rnaturalearth")
+#install.packages("rnaturalearthdata")
+#install.packages("sf")
+
+#install.packages("stringr")
+#install.packages("biscale")
+#install.packages("countrycode")
+#install.packages("patchwork")
+#install.packages("ggplot2")
+
+#install.packages("survival")
+#install.packages("survminer")
+#install.packages("gridExtra")
+```
+
+```{r, echo=FALSE, message = FALSE, warning = FALSE}
+# === Data manipulation ===
+library(dplyr)
+library(readr)
+library(stringr)
+
+# === Cartographie ===
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(sf)
+library(countrycode)
+
+# === Visualisation ===
+library(ggplot2)
+library(plotly)
+library(biscale)
+library(patchwork)
+library(gridExtra)
+
+# === Analyse de survie ===
+library(survival)
+library(survminer)
+
+```
+
+<div style="text-align: center;">
+# **II - CARACTÉRISTIQUES DES DONNÉES**
+</div>
+  
+SOURCE : https://www.kaggle.com/datasets/atharvasoundankar/global-cybersecurity-threats-2015-2024  
+  
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+
+way_ANNA = "/Users/annad/Documents/MASTER/M2/analyse de survie/data/Global_Cybersecurity_Threats_2015_2024.csv"
+
+way_NIELS = "C:/Users/Denoel/Documents/ETUDES/FAC/2024-2026/MASTER 2024/M2/1 - COURS/S1/ADS FIABILITE/PROJET/cyber_security/Global_Cybersecurity_Threats_2015-2024.csv"
+
+cybersecurity_threat <- read_csv(way_NIELS)
+
+```
+
+## **A) Descriptions des données**
+
+
+
+```{r, results = 'hide', echo = FALSE, message = FALSE, warning = FALSE}
+colnames(cybersecurity_threat)
+```
+
+Nous disposons des colonnes suivantes :  
+- <u>*Country*</u> : **(qualitative)** le pays où a eu lieu l'attaque;  
+- <u>*Year*</u> : **(quantitative)** l'année de l'attaque;  
+- <u>*Attack Type*</u> : **(qualitative)** le type d'attaque concernée;   
+- <u>*Target Industry*</u> : **(qualitative)** le type d'insdustrie victime de l'attaque;  
+- <u>*Financial Loss*</u> : **(quantitative)** perte financière en million de dollars  
+- <u>*Number of affected users*</u> : **(quantitative)** le nombre d'utilisateurs touchés par l'attaque;  
+- <u>*Attack source*</u> : **(qualitative)** le type de personne à l'origine de l'attaque;  
+- <u>*Security vulnerability type*</u> : **(qualitative)** l'origine de la vulnérabilité face à l'attaque;  
+- <u>*Defense Mechanism Used*</u> : **(qualitative)** méchainsme de défense utilisé;  
+- <u>*Incident Resolution Time*</u> : **(quantitative)** temps de résolution de l'attaque en heures;
+
+Nous avons donc 6 variables qualitatives et 4 variables quantitatives.
+
+
+## **B) Défintion des éléments de l'analyse de survie**
+
+- Temporelle : Temps que la défense a pris pour se défendre (Incident Resolution time (hours)) - quelles sont les chances qu'une attaque puisse être résolue en un temps limité ? (en moins de 3 jours)
+- Évènement : cyber attaque
+- Censure : manque d'informations sur les données
+
+
+<div style="text-align: center;">
+# **III - ANALYSE EXPLORATOIRE**
+</div>
+
+
+## **A) Vérification des valeurs NaN:**
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+
+colSums(is.na(cybersecurity_threat))
+
+```
+
+Nous n'avons aucune valeur NaN.
+
+## **B) Histrogramme et Boxplot:**
+
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+# HISTOGRAMME
+
+ggplot(cybersecurity_threat, aes(x = `Incident Resolution Time (in Hours)`)) +
+  geom_histogram(binwidth = 1, fill = "#0B78F4", color = "black", alpha = 0.7) +
+  labs(
+    title = "Histogramme du temps de résolution des incidents",
+    x = "Durée de résolution (heures)",
+    y = "Nombre d'incidents"
+  ) +
+  theme_minimal()
+
+
+# BOXPLOT
+
+ggplot(cybersecurity_threat, aes(y = `Incident Resolution Time (in Hours)`)) +
+  geom_boxplot(fill = "#0B78F4", color = "black", alpha = 0.7, outlier.color = "red", outlier.shape = 16) +
+  labs(
+    title = "Boîte à moustaches du temps de résolution des incidents",
+    y = "Durée de résolution (heures)"
+  ) +
+  theme_minimal()
+
+
+```
+
+(QUE PEUT ON EN CONCLURE ?)
+
+## **C) Carte des attaques:**  
+  
+  Zoom possible sur la carte **:)**
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+
+# --- AGRÉGATION DES DONNÉES ---
+df_summary <- cybersecurity_threat %>%
+  group_by(Country) %>%
+  summarise(
+    n_attacks = n(),
+    mean_resolution = mean(`Incident Resolution Time (in Hours)`, na.rm = TRUE)
+  )
+
+# --- HARMONISATION DES NOMS DE PAYS ---
+df_summary$country_clean <- countrycode(df_summary$Country,
+                                        origin = "country.name",
+                                        destination = "country.name")
+
+# Corrige manuellement les éventuels NA
+df_summary$country_clean[is.na(df_summary$country_clean)] <- df_summary$Country[is.na(df_summary$country_clean)]
+
+# --- IMPORTATION DE LA CARTE DU MONDE ---
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+# --- COORDONNÉES DES CENTROÏDES DES PAYS ---
+centroids <- st_centroid(world)
+coords <- as.data.frame(st_coordinates(centroids))
+world$long <- coords$X
+world$lat <- coords$Y
+
+# --- FUSION DES DONNÉES ---
+df_points <- df_summary %>%
+  left_join(world %>% st_drop_geometry() %>% select(name, long, lat),
+            by = c("country_clean" = "name"))
+
+# --- TRAÇAGE ggplot ---
+map <- ggplot() +
+  geom_sf(data = world, fill = "gray95", color = "gray80", size = 0.1) +
+  geom_point(
+    data = df_points,
+    aes(
+      x = long, y = lat,
+      size = n_attacks,
+      color = mean_resolution,
+      text = paste0(
+        "<b>Pays :</b> ", country_clean, "<br>",
+        "<b>Nombre d'attaques :</b> ", n_attacks, "<br>",
+        "<b>Durée moyenne :</b> ", round(mean_resolution, 1), " h"
+      )
+    ),
+    alpha = 0.85
+  ) +
+  scale_color_gradient(
+    low = "#FFD700",   # jaune clair
+    high = "#FF0000",  # rouge vif
+    name = "Durée moyenne (heures)"
+  ) +
+  scale_size_continuous(
+    range = c(3, 15),
+    name = "Nombre d'attaques"
+  ) +
+  theme_minimal() +
+  labs(
+    title = "Cyberattaques dans le monde",
+    subtitle = "Taille = nombre d'attaques | Couleur = durée moyenne de résolution (heures)",
+    caption = "Données : projet cyberattaques"
+  ) +
+  theme(
+    legend.position = "right",
+    plot.title = element_text(face = "bold", size = 16),
+    plot.subtitle = element_text(size = 12)
+  )
+
+# --- TRANSFORMATION EN CARTE INTERACTIVE ---
+interactive_map <- ggplotly(
+  map,
+  tooltip = c("text")  # affiche le contenu de aes(text=)
+) %>%
+  layout(
+    legend = list(
+      orientation = "v",
+      x = 1.05, y = 0.8,
+      title = list(text = "<b>Légendes</b>")
+    )
+  ) %>%
+  config(
+    scrollZoom = TRUE,   # 🔍 permet le zoom à la molette
+    displaylogo = FALSE, # supprime le logo Plotly
+    modeBarButtonsToRemove = c("select2d", "lasso2d") # nettoie la barre d’outils
+  )
+
+interactive_map
+```
+
+
+<div style="text-align: center;">
+# **IV - ANALYSE DE SURVIE**
+</div>
+
+### **A) Défition des fonctions et des paramètres**  
+  
+    
+
+| **FONCTION** | **EXPRESSION** | **DESCRIPTION** |
+|:-----------:|:-----------:|:-----------:|
+| T | $T$ | La durée de la résolution de la cyber-attaque (en heures) |
+| S(t) | $P(X>t)$ | Fonction de survie : la probabilité que la durée de résolution de la cyber-attaque soit supérieure à $t$ |
+| h(t) | $\frac{f(t)}{S(t)}$ | Fonction de risque : la probabilité que la résolution de la cyber-attaque se termine au moment $t$, étant donné que l'attaque était encore active jusque-là (risque instantané de fin d'attaque pour les attaques encore en cours) |
+| H(t) | $\int_0^t h(x)\,dx$ | Risque cumulé |
+
+
+
+
+### **B) La censure**  
+  
+Etant donné que nous n'avons pas de valeurs manquantes, nous n'avons pas de censure. 
+  
+Mais nous pouvons en créer une artificielle, car la moyenne de temps d'une résolution d'attaque est de 14h. Nous allons donc assumer que l'entreprise meurt après 14h sans avoir résolu la cyber-attaque.  
+Nous allons donc créer une censure à droite.   
+  
+
+
+Alors créons deux datasets, un avec la censure à 14h, l'autre sans censure (l'original pour nous).  
+
+```{r, echo=FALSE}
+
+temps_censure <- 14  # seuil de censure à droite (en heures)
+col_time <- "Incident Resolution Time (in Hours)"
+
+# 1) Partir du tableau complet, créer une vraie colonne numérique "time", filtrer proprement
+cyber <- cybersecurity_threat %>%
+  mutate(time = as.numeric(.data[[col_time]])) %>%
+  filter(!is.na(time) & time > 0)
+
+# 2) SANS CENSURE : tous les événements sont observés
+df_sans_censure <- cyber %>%
+  mutate(event = 1)
+
+# 3) AVEC CENSURE : tronquer à 14 h et marquer les censures
+#    (tu peux mettre <= au lieu de < selon ta convention)
+df_avec_censure <- cyber %>%
+  mutate(
+    time  = pmin(time, temps_censure),
+    event = ifelse(.data[[col_time]] < temps_censure, 1, 0)
+  )
+
+
+```
+
+
+
+#### **Illustration pour mieux comprendre la censure à droite**
+
+
+```{r, echo=FALSE}
+library(ggplot2)
+library(dplyr)
+
+# --- Jeu de données d'exemple ---
+set.seed(123)
+n <- 10  # nombre d'incidents
+temps_censure <- 14
+
+# Durées aléatoires (entre 2h et 25h)
+df_demo <- data.frame(
+  id = factor(1:n),
+  time_true = runif(n, 2, 25)
+) %>%
+  mutate(
+    time_obs = pmin(time_true, temps_censure),
+    event = ifelse(time_true <= temps_censure, 1, 0)
+  )
+
+# --- Tracé ---
+ggplot(df_demo, aes(y = id)) +
+  geom_segment(aes(x = 0, xend = time_obs, yend = id,
+                   color = factor(event)), linewidth = 1.2) +
+  geom_point(aes(x = time_obs, shape = factor(event), color = factor(event)), size = 3) +
+  scale_color_manual(values = c("0" = "#D55E00", "1" = "#0072B2"),
+                     labels = c("0" = "Censuré (|)", "1" = "Événement (❌)")) +
+  scale_shape_manual(values = c("0" = 124, "1" = 4),  # | et X
+                     labels = c("0" = "Censuré", "1" = "Événement")) +
+  labs(
+    title = "Illustration de la censure à droite (seuil = 14 h)",
+    x = "Temps (heures)",
+    y = "Incident",
+    color = "Statut",
+    shape = "Statut"
+  ) +
+  geom_vline(xintercept = temps_censure, linetype = "dashed", color = "grey40") +
+  annotate("text", x = temps_censure + 0.5, y = n + 0.5,
+           label = "Seuil de censure (14 h)", hjust = 0, size = 3.5, color = "grey40") +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "bottom",
+        plot.title = element_text(face = "bold", hjust = 0.5))
+
+```
+
+
+#### **Distribution de la donnée de survie selon la censure**
+
+
+```{r, echo=FALSE}
+library(ggplot2)
+
+ggplot(df_avec_censure, aes(x = `Incident Resolution Time (in Hours)`, 
+                            fill = factor(event))) +
+  geom_density(alpha = 0.5) +
+  scale_fill_manual(values = c("#009EAF", "#D55E00"),
+                    labels = c("Censuré (0)", "Résolu (1)")) +
+  labs(title = "Distribution des temps de résolution selon l’état de l’incident",
+       x = "Temps de résolution (heures)",
+       y = "Densité",
+       fill = "État") +
+  theme_minimal(base_size = 13)
+
+
+
+
+
+
+library(dplyr)
+
+df_cum <- df_avec_censure %>%
+  arrange(`Incident Resolution Time (in Hours)`) %>%
+  group_by(event) %>%
+  mutate(prop = cumsum(event) / n())
+
+ggplot(df_cum, aes(x = `Incident Resolution Time (in Hours)`, 
+                   y = prop, color = factor(event))) +
+  geom_line(size = 1.1) +
+  scale_color_manual(values = c("#009EAF", "#D55E00"),
+                     labels = c("Censuré (0)", "Résolu (1)")) +
+  labs(title = "Proportion cumulative d’incidents selon l’état",
+       x = "Temps (heures)",
+       y = "Proportion cumulée",
+       color = "État") +
+  theme_minimal(base_size = 13)
+
+
+
+
+
+
+
+
+
+
+```
+
+  
+Regardons la distribution selon les pays.  
+  
+
+```{r, echo=FALSE}
+library(ggplot2)
+library(dplyr)
+
+bw <- 2  # largeur des bins (ajuste selon ton échelle de temps)
+
+ggplot(df_avec_censure %>% filter(!is.na(Country)),
+       aes(x = `Incident Resolution Time (in Hours)`,
+           fill = factor(event))) +
+  geom_histogram(position = "identity",
+                 alpha = 0.6,
+                 binwidth = bw,
+                 color = "black",
+                 linewidth = 0.2) +
+  scale_fill_manual(values = c("0" = "#5DA5DA", "1" = "#F5A362"),
+                    name = "Status",
+                    labels = c("Censuré (0)", "Non censuré (1)")) +
+  facet_wrap(~ Country, scales = "free_y") +
+  labs(
+    title = "Distribution du temps de résolution par pays",
+    x = "Temps de résolution (heures)",
+    y = "Nombre d’incidents",
+    fill = "État"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(strip.text = element_text(face = "bold"))
+
+```
+
+
+
+Regardons la distribution selon les industries.
+
+
+```{r, echo=FALSE}
+ggplot(df_avec_censure %>% filter(!is.na(`Target Industry`)),
+       aes(x = `Incident Resolution Time (in Hours)`,
+           fill = factor(event))) +
+  geom_histogram(position = "identity",
+                 alpha = 0.6,
+                 binwidth = bw,
+                 color = "black",
+                 linewidth = 0.2) +
+  scale_fill_manual(values = c("0" = "#5DA5DA", "1" = "#F5A362"),
+                    name = "Status",
+                    labels = c("Censuré (0)", "Non censuré (1)")) +
+  facet_wrap(~ `Target Industry`, scales = "free_y") +
+  labs(
+    title = "Distribution du temps de résolution par industrie",
+    x = "Temps de résolution (heures)",
+    y = "Nombre d’incidents",
+    fill = "État"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(strip.text = element_text(face = "bold"))
+
+```
+
+
+
+```{r, echo=FALSE}
+
+# Nouveau histogramme, avec la censure 
+
+#ggplot(df_avec_censure, aes(x = time)) +
+#  geom_histogram(binwidth = 1, fill = "#0B78F4", color = "black", alpha = 0.7) +
+#  labs(
+#    title = "Histogramme du temps de résolution des incidents (avec censure)",
+#    x = "Durée de résolution (heures)",
+#    y = "Nombre d'incidents"
+#  ) +
+ # theme_minimal()
+#
+
+```
+
+
+## **C) Estimation des fonctions**
+
+
+### **KAPLAN MEIER pour la fonction de survie S(t)**
+
+On sélectionne uniquement la colonne de temps et on la renomme proprement.
+
+
+```{r, echo=FALSE}
+df <- cybersecurity_threat %>%
+  select(`Incident Resolution Time (in Hours)`) %>%
+  rename(time_hours = `Incident Resolution Time (in Hours)`) %>%
+  filter(!is.na(time_hours))
+
+# df est donc juste une copie du dataset de base où on a juste renommé la colonne de temps avec un autre nom.
+
+```
+
+
+Forumule avec censure : 
+
+$$
+\widehat{S}(t) = \prod_{t_i \le t} \left(1 - \frac{d_i}{n_i}\right)
+$$
+```{r, echo=FALSE}
+fit_avec  <- survfit(Surv(time, event) ~ 1, data = df_avec_censure)
+
+df_avec_plot <- data.frame(
+  time = fit_avec$time,
+  surv = fit_avec$surv,
+  type = "Avec censure (14h)"
+)
+
+ggplot(df_avec_plot, aes(x = time, y = surv)) +
+  geom_step(linewidth = 1.1) +
+  labs(title = "Courbe de survie Kaplan–Meier (avec censure)",
+       x = "Temps (heures)", y = "S(t)") +
+  coord_cartesian(ylim = c(0, 1)) +
+  theme_minimal(base_size = 13)
+
+```
+
+
+
+
+
+Formule sans censure :
+
+$$
+S(t) = [S(t - 1)] \cdot \left( 1 - \frac{d}{n} \right)
+$$
+
+
+```{r, echo=FALSE}
+
+fit_sans  <- survfit(Surv(time, event) ~ 1, data = df_sans_censure)
+
+df_sans_plot <- data.frame(
+  time = fit_sans$time,
+  surv = fit_sans$surv,
+  type = "Sans censure"
+)
+
+ggplot(df_sans_plot, aes(x = time, y = surv)) +
+  geom_step(linewidth = 1.1) +
+  labs(title = "Courbe de survie Kaplan–Meier (sans censure)",
+       x = "Temps (heures)", y = "S(t)") +
+  coord_cartesian(ylim = c(0, 1)) +
+  theme_minimal(base_size = 13)
+```
+
+
+
+```{r, echo=FALSE}
+
+df_combined <- rbind(df_sans_plot, df_avec_plot)
+
+ggplot() +
+  geom_step(data = df_sans_plot, aes(time, surv, color = "Sans censure"), linewidth = 1.1) +
+  geom_step(data = df_avec_plot, aes(time, surv, color = "Avec censure (14h)"),
+            linewidth = 1.1, linetype = "dashed") +
+  scale_color_manual(values = c("Sans censure" = "#0072B2",
+                                "Avec censure (14h)" = "red")) +
+  labs(
+    title = "Courbes de survie Kaplan–Meier",
+    x = "Temps (heures)",
+    y = "Probabilité de survie S(t)"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    legend.title = element_blank(),
+    plot.title = element_text(face = "bold", hjust = 0.5)
+  )
+
+
+
+```
+
+On peut faire après les courbes selon l'industrie, les pays ou encore les types de défenses utilisés etc. -> à faire lol
+
+#### BIAIS
+
+L'estimateur de Kaplan-Meier est biaisé, mais asymptotiquement sans biais. 
+
+
+
+à modifier : Le biais est une mesure de l'écart entre l'estimation de Kaplan-Meier et la vraie fonction de survie. Il indique si l'estimateur surestime ou sous-estime la probabilité de survie à un moment donné. Ici, le biais est positif, cela signifie que l'estimateur de Kaplan-Meier est enclin à surestimer la probabilité de survie par rapport à la réalité.
+
+
+```{r, echo=FALSE}
+
+# Suppose qu'on utilise df_avec_censure
+t <- 14  # par exemple
+fit <- survfit(Surv(time, event) ~ 1, data = df_avec_censure)
+
+# --- 1) Survie estimée par Kaplan–Meier à t ---
+observed_survival <- summary(fit, times = t)$surv
+
+# --- 2) Survie empirique "naïve" ---
+# proportion d'incidents résolus avant t
+prop_resolus <- mean(df_avec_censure$event[df_avec_censure$time <= t])
+expected_survival <- 1 - prop_resolus
+
+# --- 3) Biais ---
+bias <- observed_survival - expected_survival
+
+bias
+```
+
+```{r, echo=FALSE}
+library(survival)
+
+# Jeu sans censure
+t <- 14  # par exemple 14 heures
+
+fit_no_cens <- survfit(Surv(time, event) ~ 1, data = df_sans_censure)
+
+# --- 1) Survie estimée par Kaplan–Meier à t ---
+observed_survival_no_cens <- summary(fit_no_cens, times = t)$surv
+
+# --- 2) Survie empirique (sans censure, donc simplement le % de cas > t) ---
+expected_survival_no_cens <- mean(df_sans_censure$time > t)
+
+# --- 3) Biais ---
+bias_no_cens <- observed_survival_no_cens - expected_survival_no_cens
+
+bias_no_cens
+
+```
+
+On a le même biais mais on devait s'y attendre par rapport à la courbe de Kaplan-Meier qu'on a obtenu avant.
+
+
+#### VARIANCE 
+
+
+
+
+
+## **NELSON AALEN pour la fonction de risque cumulative H(t)**
+
+H(t) est définie comme la somme cumulative des risques au fil du temps. Elle est souvent utilisée lorsque les données de survie sont censurées.
+
+Formule avec censure :
+$$
+H(t) = \sum_{t_i \le t} \frac{d_i}{n_i}
+$$
+```{r, echo=FALSE}
+# --- Avec censure (14h) ---
+fit_na_avec <- survfit(Surv(time, event) ~ 1,
+                       data = df_avec_censure,
+                       type = "fleming-harrington")
+
+df_H_avec <- data.frame(
+  time = fit_na_avec$time,
+  H    = -log(pmax(fit_na_avec$surv, 1e-12)),
+  type = "Avec censure (14h)"
+)
+
+
+```
+
+
+
+Formule sans censure : 
+$$
+H(t) = \sum_{i} \frac{d_i}{n_i}
+$$
+
+```{r, echo=FALSE}
+# --- Sans censure ---
+fit_na_sans <- survfit(Surv(time, event) ~ 1,
+                       data = df_sans_censure,
+                       type = "fleming-harrington")
+
+df_H_sans <- data.frame(
+  time = fit_na_sans$time,
+  H    = -log(pmax(fit_na_sans$surv, 1e-12)),
+  type = "Sans censure"
+)
+
+
+
+```
+
+
+tracé des deux courbes
+
+```{r, echo=FALSE}
+df_H <- bind_rows(df_H_sans, df_H_avec)
+
+# --- Tracé ---
+ggplot(df_H, aes(x = time, y = H, color = type, linetype = type)) +
+  geom_step(linewidth = 1.1) +
+  labs(title = "Risque cumulée H(t) — estimateur de Nelson–Aalen",
+       x = "Temps (heures)", y = "H(t)") +
+  scale_color_manual(values = c("Sans censure" = "#0072B2",
+                                "Avec censure (14h)" = "#D55E00")) +
+  scale_linetype_manual(values = c("Sans censure" = "solid",
+                                   "Avec censure (14h)" = "dashed")) +
+  theme_minimal(base_size = 13) +
+  theme(legend.title = element_blank(),
+        plot.title = element_text(face = "bold", hjust = 0.5))
+
+```
+
+
+même problème, les deux courbes se confondent mais va s'y j'ai la flemme 
+
+
+
+
+## **DENSITÉ DE RISQUE INSTANTÉ h(t)**
+
+La densité du risque instantané h(t) est définie comme le rapport du nombre d'événements observés à un instant donné au nombre de sujets encore à risque à cet instant
+
+Formule sans censure :
+$$
+h(t) = \frac{d}{n}
+$$
+
+
+Formule avec cendure :
+
+$$
+h(t) = \sum_i \frac{d_i}{n_i}
+$$
+
+
+
+
+```{r, echo=FALSE}
+library(dplyr)
+library(ggplot2)
+
+# Combine les deux courbes de survie
+df_combined <- bind_rows(df_sans_plot, df_avec_plot)
+
+# Calcule H(t) et h(t) ≈ ΔH / Δt
+df_hazard <- df_combined %>%
+  group_by(type) %>%
+  arrange(time, .by_group = TRUE) %>%
+  mutate(
+    H = -log(pmax(surv, 1e-12)),              # H(t) = -log(S(t))
+    h = (H - lag(H)) / (time - lag(time))     # h(t) par différences finies
+  )
+
+# Supprime les premières lignes NA
+df_hazard <- df_hazard %>% filter(!is.na(h))
+
+# --- Tracé de h(t) ---
+ggplot(df_hazard, aes(x = time, y = h, color = type, linetype = type)) +
+  geom_step(linewidth = 1.1) +
+  labs(title = "Densité de risque instantané h(t)",
+       subtitle = "Comparaison entre jeu avec et sans censure",
+       x = "Temps (heures)",
+       y = "h(t) — Densité de risque instantané") +
+  scale_color_manual(values = c("Sans censure" = "#0072B2",
+                                "Avec censure (14h)" = "#D55E00")) +
+  scale_linetype_manual(values = c("Sans censure" = "solid",
+                                   "Avec censure (14h)" = "dashed")) +
+  theme_minimal(base_size = 13) +
+  theme(
+    legend.title = element_blank(),
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(hjust = 0.5)
+  )
+
+```
+
+
+## **Estimateur de BRESLOW**
+
+modèle de Cox sans covariable → la baseline hazard est l’estimateur de Breslow
+
+L'estimateur de Breslow est obtenu à partir de l'estimateur de Kaplan-Meier. Sa formule est la suivante : -> à vérifier
+
+$$
+\hat{H}_{BR} = -\log(\hat{S}_{KM})
+$$
+où :
+$$
+\hat{S}_{KM}(t) = \prod_{i = 1,\, t_i < t} (1 - d_i Y_i)
+$$
+
+
+
+L'estimateur de Breslow est utilisé pour estimer la fonction de survie dans le modèle de régression de Cox. Il permet de tenir compte de la censure dans les données de survie et fournit une estimation adaptée pour les échantillons censurés.
+
+Formule sans censure :
+$$
+H(t) = \sum_{t_i \le t} \frac{d_i}{n_i}
+$$
+
+```{r, echo=FALSE}
+cox_sans_censure  <- coxph(Surv(time, event) ~ 1, data = df_sans_censure)
+
+H_sans <- basehaz(cox_sans_censure, centered = FALSE) %>%
+  transmute(time = time,
+            H = hazard / max(hazard, na.rm = TRUE),
+            type = "Sans censure")
+```
+
+
+Formule avec censure :
+
+$$
+H(t) = \sum_{t_i \le t} \sum_{j \le t_i} \frac{d_{ij}}{n_{ij}}
+$$
+
+```{r, echo=FALSE}
+cox_avec_censure  <- coxph(Surv(time, event) ~ 1, data = df_avec_censure)
+
+H_avec <- basehaz(cox_avec_censure, centered = FALSE) %>%
+  transmute(time = time,
+            H = hazard / max(hazard, na.rm = TRUE),   
+            type = "Avec censure (14h)")
+
+```
+
+
+
+tracé des deux courbes
+
+```{r, echo=FALSE}
+df_breslow <- bind_rows(H_avec, H_sans)
+
+# --- 🎨 Tracé final ---
+ggplot(df_breslow, aes(x = time, y = H, color = type, linetype = type)) +
+  geom_step(linewidth = 1.2) +
+  labs(
+    title = "Estimation de la fonction de risque cumulée H(t) — Méthode de Breslow",
+    subtitle = "Comparaison entre jeu avec et sans censure",
+    x = "Temps (heures)",
+    y = "Fonction de risque cumulé H(t) normalisée"
+  ) +
+  scale_color_manual(values = c("Sans censure" = "#0072B2",
+                                "Avec censure (14h)" = "#D55E00")) +
+  scale_linetype_manual(values = c("Sans censure" = "solid",
+                                   "Avec censure (14h)" = "dashed")) +
+  theme_minimal(base_size = 13) +
+  theme(
+    legend.title = element_blank(),
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(hjust = 0.5)
+  )
+
+```
+
+
+## **LOG RANK**
+
+Le test du log-rank compare les courbes de survie de deux groupes distincts. L'hypothèse nulle du test est que les deux groupes proviennent de la même population, c'est-à-dire qu'il n'y a pas de différence significative entre les distributions de survie des deux groupes.
+
+
+Ici, nous allons comparer les distributions des courbes quand les données sont censurées vs non-censurées. Nous allons déterminer s'il y a une différence significative dans la distribution des temps de survie entre ces groupes.
+
+Si le test du log-rank donne un résultat significatif, cela suggère que les courbes de survie sont différentes, indiquant une variation significative dans les temps de survie entre les groupes comparés. En revanche, si le test n'est pas significatif, on n'a pas suffisamment de preuves pour rejeter l'hypothèse nulle, ce qui signifie que les courbes de survie peuvent être considérées comme provenant de la même population.
+
+
+```{r, echo=FALSE}
+# --- 1) Concaténer les deux jeux avec un facteur de groupe
+df_cens <- df_avec_censure  %>% mutate(groupe = "Censurée")
+df_nonc <- df_sans_censure  %>% mutate(groupe = "Non censurée")
+
+df_all <- bind_rows(df_cens, df_nonc) %>%
+  mutate(groupe = factor(groupe, levels = c("Non censurée", "Censurée")))
+
+# --- 2) Kaplan–Meier par groupe
+fit <- survfit(Surv(time, event) ~ groupe, data = df_all)
+
+# --- 3) Test du log-rank (équivalent à lifelines.statistics.logrank_test)
+lr <- survdiff(Surv(time, event) ~ groupe, data = df_all, rho = 0)
+chisq <- lr$chisq
+df    <- length(lr$n) - 1
+pval  <- 1 - pchisq(chisq, df)
+
+cat(sprintf("Test du log-rank : Chi² = %.3f, df = %d, p-value = %.4g\n", chisq, df, pval))
+
+# --- 4) Préparer un data.frame pour ggplot (courbes + IC)
+s <- summary(fit)
+df_plot <- data.frame(
+  time  = s$time,
+  surv  = s$surv,
+  lower = s$lower,
+  upper = s$upper,
+  groupe = sub("^groupe=", "", s$strata)  # nettoie le nom des strates
+)
+
+# --- 5) Tracé Kaplan–Meier avec IC
+ggplot(df_plot, aes(x = time, y = surv, color = groupe, fill = groupe, linetype = groupe)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.15, linewidth = 0) +
+  geom_step(linewidth = 1.1) +
+  labs(
+    title = "Fonction de survie (Kaplan–Meier) - Log Rank",
+    #subtitle = sprintf("Test du log-rank : Chi² = %.2f, p = %.3g", chisq, pval),
+    x = "Temps (heures)",
+    y = "Probabilité de survie",
+    color = "Groupe", fill = "Groupe", linetype = "Groupe"
+  ) +
+  scale_color_manual(values = c("Non censurée" = "#0072B2", "Censurée" = "#D55E00")) +
+  scale_fill_manual (values = c("Non censurée" = "#0072B2", "Censurée" = "#D55E00")) +
+  scale_linetype_manual(values = c("Non censurée" = "solid", "Censurée" = "dashed")) +
+  theme_minimal(base_size = 13) +
+  theme(
+    legend.title = element_blank(),
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(hjust = 0.5)
+  )
+```
+
+
+### **COX (semi-paramétrique) -> j'ai pas compris encore**
+
+
+
+
+## **C) Estimation paramétrique (ou non paramétrique, jsp dans notre cas pour l'instanbt)**
+
+# **V - MACHINE-LEARNING**
+
+
